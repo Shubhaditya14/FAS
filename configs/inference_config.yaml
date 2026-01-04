@@ -1,0 +1,38 @@
+# Inference Configuration
+
+# Model configuration
+model:
+  checkpoint_path: "checkpoints/best_model.pth"
+  device: "mps"  # Options: mps, cuda, cpu
+
+# Input configuration
+input:
+  image_size: [224, 224]
+  normalize:
+    mean: [0.485, 0.456, 0.406]
+    std: [0.229, 0.224, 0.225]
+
+# Inference parameters
+inference:
+  batch_size: 1
+  confidence_threshold: 0.5  # Threshold for binary classification
+  return_features: false
+  return_attention: false
+
+# Post-processing
+postprocessing:
+  smooth_predictions: false  # For video inference
+  temporal_window: 10  # Frames to smooth over (if enabled)
+
+# Output configuration
+output:
+  save_predictions: false
+  save_visualizations: false
+  output_dir: "outputs"
+
+# Real-time inference (for webcam/video)
+realtime:
+  enabled: false
+  fps_limit: 30
+  display_results: true
+  record_output: false

@@ -1,0 +1,84 @@
+# Training Configuration
+
+# Data configuration
+data:
+  train_path: "data/splits/train"
+  val_path: "data/splits/val"
+  test_path: "data/splits/test"
+  batch_size: 32
+  num_workers: 4
+  shuffle: true
+  pin_memory: true
+
+# Data augmentation
+augmentation:
+  enabled: true
+  resize: [224, 224]
+  random_crop: true
+  horizontal_flip: 0.5
+  rotation: 15
+  color_jitter:
+    brightness: 0.2
+    contrast: 0.2
+    saturation: 0.2
+    hue: 0.1
+  normalize:
+    mean: [0.485, 0.456, 0.406]
+    std: [0.229, 0.224, 0.225]
+
+# Training hyperparameters
+training:
+  epochs: 100
+  learning_rate: 0.001
+  optimizer: "adam"  # Options: adam, sgd, adamw
+  weight_decay: 0.0001
+  momentum: 0.9  # For SGD
+
+# Learning rate scheduler
+scheduler:
+  type: "cosine"  # Options: cosine, step, plateau, exponential
+  warmup_epochs: 5
+  min_lr: 0.00001
+  step_size: 30  # For step scheduler
+  gamma: 0.1  # For step/exponential scheduler
+  patience: 10  # For plateau scheduler
+
+# Loss function
+loss:
+  type: "cross_entropy"  # Options: cross_entropy, focal, contrastive
+  label_smoothing: 0.1
+  class_weights: null  # [1.0, 1.0] or null for balanced
+
+# Regularization
+regularization:
+  dropout: 0.3
+  early_stopping:
+    enabled: true
+    patience: 15
+    min_delta: 0.001
+
+# Device configuration
+device:
+  type: "mps"  # Options: mps, cuda, cpu
+  mixed_precision: false  # MPS doesn't support AMP yet
+
+# Checkpointing
+checkpoint:
+  save_dir: "checkpoints"
+  save_frequency: 5  # Save every N epochs
+  save_best_only: true
+  monitor: "val_loss"  # Metric to monitor for best model
+  mode: "min"  # min or max
+
+# Logging
+logging:
+  use_wandb: false
+  use_tensorboard: true
+  log_dir: "logs"
+  project_name: "fas-system"
+  experiment_name: null  # Auto-generated if null
+  log_frequency: 10  # Log every N batches
+
+# Reproducibility
+seed: 42
+deterministic: true

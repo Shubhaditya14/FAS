@@ -1,0 +1,30 @@
+# Model Architecture Configuration
+
+# Backbone configuration
+backbone:
+  name: "efficientnet-b0"  # Options: efficientnet-b0/b1/b2, resnet50, mobilenet_v3
+  pretrained: true
+  freeze_layers: 0  # Number of initial layers to freeze (0 = train all)
+
+# Feature fusion configuration
+fusion:
+  type: "concat"  # Options: concat, attention, adaptive
+  dropout: 0.3
+  hidden_dims: [512, 256]
+
+# Classification head
+classifier:
+  num_classes: 2  # Binary: Real vs Spoof
+  activation: "softmax"
+
+# Multi-modal configuration (if using RGB + depth/IR)
+multimodal:
+  enabled: false
+  modalities: ["rgb"]  # Options: rgb, depth, ir, thermal
+  fusion_strategy: "early"  # Options: early, late, hybrid
+
+# Model output
+output:
+  logits: true
+  features: false  # Whether to output intermediate features
+  attention_maps: false  # Whether to output attention visualizations
