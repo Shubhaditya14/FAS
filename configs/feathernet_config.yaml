@@ -1,0 +1,22 @@
+# FeatherNet Model Configuration
+
+model:
+  architecture: FeatherNetB
+  input_size: 128
+  num_classes: 2
+  embedding_dim: 512
+
+pretrained:
+  binary_model: pth/AntiSpoofing_bin_128.pth
+  multiclass_model: pth/AntiSpoofing_print-replay_128.pth
+
+preprocessing:
+  mean: [0.485, 0.456, 0.406]
+  std: [0.229, 0.224, 0.225]
+  resize: 128
+  to_rgb: true
+
+inference:
+  threshold: 0.5
+  batch_size: 32
+  device: cpu  # cpu, cuda, or mps

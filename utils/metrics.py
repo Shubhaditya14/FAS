@@ -9,7 +9,9 @@ from sklearn.metrics import (
     confusion_matrix,
     f1_score,
     precision_score,
-    classification_report,
+    recall_score,
+    roc_auc_score,
+    roc_curve,
 )
 
 
@@ -177,6 +179,215 @@ class MetricsTracker:
         summary += f"{'-' * 60}\n"
         summary += f"Best F1 Score: {self.best_metrics.get('f1', 0):.4f} (Epoch {self.best_epoch})\n"
         summary += f"{'=' * 60}\n"
-        summary += f"{'='*60}\n"
+        summary += f"{'=' * 60}\n"
 
         return summary
+
+
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+
+
+class FASEvaluator:
+    """Comprehensive FAS evaluation class."""
+    
+    def __init__(self, device='cpu'):
+        """Initialize evaluator.
+        
+        Args:
+            device: Device to use for evaluation
+        """
+        self.device = device
+    
+    def evaluate(
+        self,
+        model: nn.Module,
+        dataloader: DataLoader,
+        threshold: float = 0.5
+    ) -> Dict[str, float]:
+        """Run full evaluation on dataset.
+        
+        Args:
+            model: Model to evaluate
+            dataloader: DataLoader for evaluation data
+            threshold: Classification threshold
+            
+        Returns:
+            Dictionary with all metrics
+        """
+        model.eval()
+        
+        all_predictions = []
+        all_labels = []
+        all_probabilities = []
+        
+        # Run inference
+        with torch.no_grad():
+            for images, labels in tqdm(dataloader, desc='Evaluating'):
+                images = images.to(self.device)
+                
+                # Get predictions
+                outputs = model(images)
+                probs = outputs.cpu().numpy().flatten()
+                
+                all_probabilities.extend(probs)
+                all_labels.extend(labels.numpy())
+        
+        # Convert to numpy
+        y_true = np.array(all_labels)
+        y_prob = np.array(all_probabilities)
+        y_pred = (y_prob >= threshold).astype(int)
+        
+        # Calculate all metrics
+        metrics = calculate_metrics(y_true, y_pred, y_prob, threshold)
+        
+        # Calculate EER
+        eer, eer_threshold = calculate_eer(y_true, y_prob)
+        metrics['eer'] = eer
+        metrics['eer_threshold'] = eer_threshold
+        
+        # Find optimal threshold
+        optimal_threshold = self.find_optimal_threshold(y_true, y_prob)
+        metrics['optimal_threshold'] = optimal_threshold
+        
+        return metrics
+    
+    def find_optimal_threshold(
+        self,
+        y_true: np.ndarray,
+        y_prob: np.ndarray,
+        metric: str = 'f1'
+    ) -> float:
+        """Find optimal classification threshold.
+        
+        Args:
+            y_true: Ground truth labels
+            y_prob: Predicted probabilities
+            metric: Metric to optimize ('f1', 'accuracy', 'acer')
+            
+        Returns:
+            Optimal threshold value
+        """
+        thresholds = np.linspace(0, 1, 100)
+        best_score = 0
+        best_threshold = 0.5
+        
+        for threshold in thresholds:
+            y_pred = (y_prob >= threshold).astype(int)
+            
+            if metric == 'f1':
+                score = f1_score(y_true, y_pred, zero_division=0)
+            elif metric == 'accuracy':
+                score = accuracy_score(y_true, y_pred)
+            elif metric == 'acer':
+                metrics = calculate_metrics(y_true, y_pred)
+                score = 1.0 - metrics['acer']  # Lower ACER is better
+            else:
+                raise ValueError(f"Unknown metric: {metric}")
+            
+            if score > best_score:
+                best_score = score
+                best_threshold = threshold
+        
+        return best_threshold
+    
+    def plot_roc_curve(
+        self,
+        y_true: np.ndarray,
+        y_prob: np.ndarray,
+        save_path: str = None
+    ):
+        """Plot ROC curve.
+        
+        Args:
+            y_true: Ground truth labels
+            y_prob: Predicted probabilities
+            save_path: Path to save plot
+        """
+        import matplotlib.pyplot as plt
+        
+        fpr, tpr, thresholds = roc_curve(y_true, y_prob)
+        auc = roc_auc_score(y_true, y_prob)
+        
+        plt.figure(figsize=(8, 6))
+        plt.plot(fpr, tpr, linewidth=2, label=f'ROC curve (AUC = {auc:.3f})')
+        plt.plot([0, 1], [0, 1], 'k--', linewidth=1, label='Random')
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('False Positive Rate', fontsize=12)
+        plt.ylabel('True Positive Rate', fontsize=12)
+        plt.title('Receiver Operating Characteristic (ROC) Curve', fontsize=14)
+        plt.legend(loc="lower right", fontsize=10)
+        plt.grid(True, alpha=0.3)
+        
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"ROC curve saved to {save_path}")
+        
+        plt.show()
+    
+    def generate_report(
+        self,
+        metrics: Dict[str, float],
+        save_path: str = None
+    ) -> str:
+        """Generate comprehensive evaluation report.
+        
+        Args:
+            metrics: Metrics dictionary
+            save_path: Path to save report
+            
+        Returns:
+            Formatted report string
+        """
+        report = "\n" + "="*70 + "\n"
+        report += "FACE ANTI-SPOOFING EVALUATION REPORT\n"
+        report += "="*70 + "\n\n"
+        
+        report += "Classification Metrics:\n"
+        report += "-"*70 + "\n"
+        report += f"  Accuracy:       {metrics.get('accuracy', 0):.4f}\n"
+        report += f"  Precision:      {metrics.get('precision', 0):.4f}\n"
+        report += f"  Recall:         {metrics.get('recall', 0):.4f}\n"
+        report += f"  F1 Score:       {metrics.get('f1', 0):.4f}\n"
+        if 'auc' in metrics:
+            report += f"  AUC-ROC:        {metrics.get('auc', 0):.4f}\n"
+        report += "\n"
+        
+        report += "FAS-Specific Metrics:\n"
+        report += "-"*70 + "\n"
+        report += f"  APCER:          {metrics.get('apcer', 0):.4f} (Attack pass rate)\n"
+        report += f"  BPCER:          {metrics.get('bpcer', 0):.4f} (Real rejection rate)\n"
+        report += f"  ACER:           {metrics.get('acer', 0):.4f} (Average error rate)\n"
+        if 'eer' in metrics:
+            report += f"  EER:            {metrics.get('eer', 0):.4f}\n"
+            report += f"  EER Threshold:  {metrics.get('eer_threshold', 0.5):.4f}\n"
+        if 'optimal_threshold' in metrics:
+            report += f"  Optimal Thresh: {metrics.get('optimal_threshold', 0.5):.4f}\n"
+        report += "\n"
+        
+        report += "Confusion Matrix:\n"
+        report += "-"*70 + "\n"
+        report += f"  True Positives:  {metrics.get('true_positive', 0)}\n"
+        report += f"  True Negatives:  {metrics.get('true_negative', 0)}\n"
+        report += f"  False Positives: {metrics.get('false_positive', 0)}\n"
+        report += f"  False Negatives: {metrics.get('false_negative', 0)}\n"
+        report += "\n"
+        
+        report += "Error Rates:\n"
+        report += "-"*70 + "\n"
+        report += f"  TPR (Sensitivity): {metrics.get('tpr', 0):.4f}\n"
+        report += f"  TNR (Specificity): {metrics.get('tnr', 0):.4f}\n"
+        report += f"  FPR:               {metrics.get('fpr', 0):.4f}\n"
+        report += f"  FNR:               {metrics.get('fnr', 0):.4f}\n"
+        
+        report += "="*70 + "\n"
+        
+        if save_path:
+            with open(save_path, 'w') as f:
+                f.write(report)
+            print(f"Report saved to {save_path}")
+        
+        return report

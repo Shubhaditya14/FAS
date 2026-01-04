@@ -1,0 +1,25 @@
+# Dataset Configuration
+
+datasets:
+  oulu:
+    root: Oulu-NPU
+    train_ratio: 0.7
+    val_ratio: 0.15
+    test_ratio: 0.15
+
+  siw:
+    root: siw
+    # SIW already has predefined train/val/test splits
+
+dataloader:
+  batch_size: 32
+  num_workers: 4
+  shuffle: true
+  pin_memory: true
+
+augmentation:
+  horizontal_flip_prob: 0.5
+  rotation_limit: 15
+  brightness_limit: 0.2
+  contrast_limit: 0.2
+  use_strong_aug: false  # Enable for more aggressive augmentation
