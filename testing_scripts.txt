@@ -1,0 +1,499 @@
+Testing Scripts to Run
+Here are the exact tests you should run after your coding agent implements everything:
+
+Test 1: Model Architecture Test
+python# test_architecture.py
+
+import torch
+import sys
+sys.path.append('.')
+
+from models.feathernet import FeatherNetB
+
+print("=" * 50)
+print("TEST 1: Model Architecture")
+print("=" * 50)
+
+# Initialize model
+model = FeatherNetB(num_classes=2)
+print("✓ Model initialized")
+
+# Check parameter count
+total_params = sum(p.numel() for p in model.parameters())
+print(f"✓ Total parameters: {total_params:,}")
+
+# Test forward pass with dummy input
+dummy_input = torch.randn(1, 3, 128, 128)
+try:
+    output = model(dummy_input)
+    print(f"✓ Forward pass successful")
+    print(f"  Input shape: {dummy_input.shape}")
+    print(f"  Output shape: {output.shape}")
+    print(f"  Output value: {output.item():.4f}")
+except Exception as e:
+    print(f"✗ Forward pass failed: {e}")
+
+# Test feature extraction
+try:
+    features = model.extract_features(dummy_input)
+    print(f"✓ Feature extraction works")
+    print(f"  Feature shape: {features.shape}")
+except Exception as e:
+    print(f"✗ Feature extraction failed: {e}")
+```
+
+**Expected Output:**
+```
+==================================================
+TEST 1: Model Architecture
+==================================================
+✓ Model initialized
+✓ Total parameters: 500,000-1,000,000
+✓ Forward pass successful
+  Input shape: torch.Size([1, 3, 128, 128])
+  Output shape: torch.Size([1, 1])
+  Output value: 0.4532
+✓ Feature extraction works
+  Feature shape: torch.Size([1, 512])
+If errors: Model architecture is wrong - check layer names match checkpoint
+
+Test 2: Pretrained Weight Loading Test
+python# test_weight_loading.py
+
+import torch
+import sys
+sys.path.append('.')
+
+from models.feathernet import FeatherNetB
+from utils.model_loader import load_pretrained_model
+
+print("=" * 50)
+print("TEST 2: Pretrained Weight Loading")
+print("=" * 50)
+
+model_files = {
+    'binary': 'pth/AntiSpoofing_bin_128.pth',
+    'multiclass': 'pth/AntiSpoofing_print-replay_128.pth',
+}
+
+for model_name, model_path in model_files.items():
+    print(f"\nLoading {model_name} model:")
+
+    try:
+        model = load_pretrained_model(model_path, device='cpu')
+        print(f"  ✓ Loaded successfully")
+
+        # Check model is in eval mode
+        print(f"  ✓ Training mode: {model.training}")
+
+        # Test inference
+        dummy_input = torch.randn(1, 3, 128, 128)
+        with torch.no_grad():
+            output = model(dummy_input)
+        print(f"  ✓ Inference works, output: {output.item():.4f}")
+
+    except Exception as e:
+        print(f"  ✗ Failed: {e}")
+        import traceback
+        traceback.print_exc()
+```
+
+**Expected Output:**
+```
+==================================================
+TEST 2: Pretrained Weight Loading
+==================================================
+
+Loading binary model:
+  ✓ Loaded successfully
+  ✓ Training mode: False
+  ✓ Inference works, output: 0.8234
+
+Loading multiclass model:
+  ✓ Loaded successfully
+  ✓ Training mode: False
+  ✓ Inference works, output: 0.6543
+If errors:
+
+"size mismatch" → Architecture doesn't match checkpoint
+"key not found" → Missing layers or wrong names
+Check the layer names in your model match the checkpoint keys
+
+
+Test 3: Preprocessing Test
+python# test_preprocessing.py
+
+import cv2
+import torch
+import sys
+sys.path.append('.')
+
+from utils.preprocessing import Preprocessor
+
+print("=" * 50)
+print("TEST 3: Preprocessing Pipeline")
+print("=" * 50)
+
+# Load a sample image from OULU
+image_path = "Oulu-NPU/true/1_2_47_1_1.jpg"  # UPDATE if needed
+
+print(f"\nTesting with image: {image_path}")
+
+# Initialize preprocessor
+preprocessor = Preprocessor()
+
+try:
+    # Test with file path
+    tensor = preprocessor.preprocess(image_path)
+    print(f"✓ Preprocessing from path works")
+    print(f"  Output shape: {tensor.shape}")
+    print(f"  Output dtype: {tensor.dtype}")
+    print(f"  Value range: [{tensor.min():.3f}, {tensor.max():.3f}]")
+
+    # Test with numpy array
+    img_np = cv2.imread(image_path)
+    img_np = cv2.cvtColor(img_np, cv2.COLOR_BGR2RGB)
+    tensor2 = preprocessor.preprocess(img_np)
+    print(f"✓ Preprocessing from numpy works")
+    print(f"  Output shape: {tensor2.shape}")
+
+    # Test batch preprocessing
+    tensors = preprocessor.preprocess_batch([image_path, image_path])
+    print(f"✓ Batch preprocessing works")
+    print(f"  Batch shape: {tensors.shape}")
+
+except Exception as e:
+    print(f"✗ Preprocessing failed: {e}")
+    import traceback
+    traceback.print_exc()
+```
+
+**Expected Output:**
+```
+==================================================
+TEST 3: Preprocessing Pipeline
+==================================================
+
+Testing with image: Oulu-NPU/true/1_2_47_1_1.jpg
+✓ Preprocessing from path works
+  Output shape: torch.Size([3, 128, 128])
+  Output dtype: torch.float32
+  Value range: [-2.118, 2.640]
+✓ Preprocessing from numpy works
+  Output shape: torch.Size([3, 128, 128])
+✓ Batch preprocessing works
+  Batch shape: torch.Size([2, 3, 128, 128])
+If errors:
+
+Wrong shape → Check resize logic
+Wrong value range → Check normalization mean/std
+File not found → Update image path
+
+
+Test 4: Dataset Loading Test
+python# test_datasets.py
+
+import sys
+sys.path.append('.')
+
+from utils.datasets import OULUDataset, SIWDataset
+from utils.preprocessing import Preprocessor
+from torch.utils.data import DataLoader
+
+print("=" * 50)
+print("TEST 4: Dataset Loading")
+print("=" * 50)
+
+preprocessor = Preprocessor()
+
+# Test OULU Dataset
+print("\n[OULU Dataset]")
+try:
+    oulu_train = OULUDataset(
+        root_dir='Oulu-NPU',
+        split='train',
+        transform=preprocessor.get_transforms()
+    )
+    print(f"✓ OULU train dataset created")
+    print(f"  Total samples: {len(oulu_train)}")
+    print(f"  Class distribution: {oulu_train.get_class_distribution()}")
+
+    # Load one sample
+    img, label = oulu_train[0]
+    print(f"✓ Sample loaded")
+    print(f"  Image shape: {img.shape}")
+    print(f"  Label: {label} ({'real' if label == 0 else 'spoof'})")
+
+    # Test dataloader
+    dataloader = DataLoader(oulu_train, batch_size=16, shuffle=True)
+    batch_img, batch_label = next(iter(dataloader))
+    print(f"✓ DataLoader works")
+    print(f"  Batch shape: {batch_img.shape}")
+    print(f"  Batch labels: {batch_label}")
+
+except Exception as e:
+    print(f"✗ OULU dataset failed: {e}")
+    import traceback
+    traceback.print_exc()
+
+# Test SIW Dataset
+print("\n[SIW Dataset]")
+try:
+    siw_train = SIWDataset(
+        root_dir='siw',
+        split='train',
+        transform=preprocessor.get_transforms()
+    )
+    print(f"✓ SIW train dataset created")
+    print(f"  Total samples: {len(siw_train)}")
+    print(f"  Class distribution: {siw_train.get_class_distribution()}")
+
+    # Load one sample
+    img, label = siw_train[0]
+    print(f"✓ Sample loaded")
+    print(f"  Image shape: {img.shape}")
+    print(f"  Label: {label}")
+
+except Exception as e:
+    print(f"✗ SIW dataset failed: {e}")
+```
+
+**Expected Output:**
+```
+==================================================
+TEST 4: Dataset Loading
+==================================================
+
+[OULU Dataset]
+✓ OULU train dataset created
+  Total samples: 1191
+  Class distribution: {'real': 240, 'spoof': 951}
+✓ Sample loaded
+  Image shape: torch.Size([3, 128, 128])
+  Label: 0 (real)
+✓ DataLoader works
+  Batch shape: torch.Size([16, 3, 128, 128])
+  Batch labels: tensor([1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 0, 1])
+
+[SIW Dataset]
+✓ SIW train dataset created
+  Total samples: 6086
+  Class distribution: {'real': 4876, 'spoof': 1210}
+✓ Sample loaded
+  Image shape: torch.Size([3, 128, 128])
+  Label: 0
+If errors:
+
+"File not found" → Check dataset paths
+Wrong counts → Check data splitting logic
+Wrong labels → Check label assignment (0=real, 1=spoof)
+
+
+Test 5: Single Image Inference Test
+python# test_inference.py
+
+import sys
+sys.path.append('.')
+
+from utils.model_loader import FASPredictor
+
+print("=" * 50)
+print("TEST 5: Single Image Inference")
+print("=" * 50)
+
+# Initialize predictor
+predictor = FASPredictor(
+    model_path='pth/AntiSpoofing_bin_128.pth',
+    device='cpu'
+)
+print("✓ Predictor initialized")
+
+# Test on real image
+print("\n[Real Image Test]")
+real_img = "Oulu-NPU/true/1_2_47_1_1.jpg"
+try:
+    pred, conf = predictor.predict_image(real_img)
+    print(f"✓ Prediction successful")
+    print(f"  Image: {real_img}")
+    print(f"  Prediction: {'REAL' if pred == 0 else 'SPOOF'}")
+    print(f"  Confidence: {conf:.4f}")
+except Exception as e:
+    print(f"✗ Failed: {e}")
+
+# Test on spoof image
+print("\n[Spoof Image Test]")
+spoof_img = "Oulu-NPU/false/1_3_48_3_1.jpg"
+try:
+    pred, conf = predictor.predict_image(spoof_img)
+    print(f"✓ Prediction successful")
+    print(f"  Image: {spoof_img}")
+    print(f"  Prediction: {'REAL' if pred == 0 else 'SPOOF'}")
+    print(f"  Confidence: {conf:.4f}")
+except Exception as e:
+    print(f"✗ Failed: {e}")
+
+# Test batch prediction
+print("\n[Batch Prediction Test]")
+images = [real_img, spoof_img, real_img]
+try:
+    preds, confs = predictor.predict_batch(images)
+    print(f"✓ Batch prediction successful")
+    for i, (p, c) in enumerate(zip(preds, confs)):
+        print(f"  Image {i+1}: {'REAL' if p == 0 else 'SPOOF'} (conf: {c:.4f})")
+except Exception as e:
+    print(f"✗ Failed: {e}")
+```
+
+**Expected Output:**
+```
+==================================================
+TEST 5: Single Image Inference
+==================================================
+✓ Predictor initialized
+
+[Real Image Test]
+✓ Prediction successful
+  Image: Oulu-NPU/true/1_2_47_1_1.jpg
+  Prediction: REAL
+  Confidence: 0.9234
+
+[Spoof Image Test]
+✓ Prediction successful
+  Image: Oulu-NPU/false/1_3_48_3_1.jpg
+  Prediction: SPOOF
+  Confidence: 0.8765
+
+[Batch Prediction Test]
+✓ Batch prediction successful
+  Image 1: REAL (conf: 0.9234)
+  Image 2: SPOOF (conf: 0.8765)
+  Image 3: REAL (conf: 0.9234)
+If errors:
+
+Low confidence on correct class → Model not trained well or preprocessing wrong
+Always predicts same class → Model loading issue or broken architecture
+
+
+Test 6: Full Dataset Evaluation Test
+python# test_evaluation.py
+
+import sys
+sys.path.append('.')
+
+from utils.datasets import OULUDataset, SIWDataset
+from utils.preprocessing import Preprocessor
+from utils.metrics import FASEvaluator
+from utils.model_loader import load_pretrained_model
+from torch.utils.data import DataLoader
+
+print("=" * 50)
+print("TEST 6: Full Dataset Evaluation")
+print("=" * 50)
+
+# Load model
+model = load_pretrained_model('pth/AntiSpoofing_bin_128.pth', device='cpu')
+print("✓ Model loaded")
+
+# Initialize evaluator
+evaluator = FASEvaluator()
+
+# Test on OULU test set
+print("\n[OULU Test Set Evaluation]")
+try:
+    preprocessor = Preprocessor()
+    oulu_test = OULUDataset(
+        root_dir='Oulu-NPU',
+        split='test',
+        transform=preprocessor.get_transforms()
+    )
+    test_loader = DataLoader(oulu_test, batch_size=32, shuffle=False)
+
+    print(f"  Test samples: {len(oulu_test)}")
+
+    # Run evaluation
+    results = evaluator.evaluate(model, test_loader)
+
+    print(f"\n  Results:")
+    print(f"    Accuracy:  {results['accuracy']:.4f}")
+    print(f"    Precision: {results['precision']:.4f}")
+    print(f"    Recall:    {results['recall']:.4f}")
+    print(f"    F1:        {results['f1']:.4f}")
+    print(f"    AUC:       {results['auc']:.4f}")
+    print(f"    APCER:     {results['apcer']:.4f}")
+    print(f"    BPCER:     {results['bpcer']:.4f}")
+    print(f"    ACER:      {results['acer']:.4f}")
+    print(f"    EER:       {results['eer']:.4f}")
+
+except Exception as e:
+    print(f"✗ Evaluation failed: {e}")
+    import traceback
+    traceback.print_exc()
+
+# Test on SIW test set
+print("\n[SIW Test Set Evaluation]")
+try:
+    siw_test = SIWDataset(
+        root_dir='siw',
+        split='test',
+        transform=preprocessor.get_transforms()
+    )
+    test_loader = DataLoader(siw_test, batch_size=32, shuffle=False)
+
+    print(f"  Test samples: {len(siw_test)}")
+
+    # Run evaluation
+    results = evaluator.evaluate(model, test_loader)
+
+    print(f"\n  Results:")
+    print(f"    Accuracy:  {results['accuracy']:.4f}")
+    print(f"    ACER:      {results['acer']:.4f}")
+    print(f"    AUC:       {results['auc']:.4f}")
+
+except Exception as e:
+    print(f"✗ Evaluation failed: {e}")
+```
+
+**Expected Output:**
+```
+==================================================
+TEST 6: Full Dataset Evaluation
+==================================================
+✓ Model loaded
+
+[OULU Test Set Evaluation]
+  Test samples: 255
+
+  Results:
+    Accuracy:  0.8500
+    Precision: 0.8234
+    Recall:    0.8765
+    F1:        0.8492
+    AUC:       0.9123
+    APCER:     0.1200
+    BPCER:     0.1500
+    ACER:      0.1350
+    EER:       0.1234
+
+[SIW Test Set Evaluation]
+  Test samples: 750
+
+  Results:
+    Accuracy:  0.7800
+    ACER:      0.2100
+    AUC:       0.8543
+What to check:
+
+Accuracy should be >70% (if much lower, something's wrong)
+ACER should be <0.3 (lower is better)
+If both APCER and BPCER are 0.5 → Model is random guessing
+If accuracy is ~100% → Data leakage or overfitting
+
+
+Summary of Tests:
+
+✅ Test 1 - Architecture builds correctly
+✅ Test 2 - Pretrained weights load
+✅ Test 3 - Preprocessing works
+✅ Test 4 - Datasets load properly
+✅ Test 5 - Inference works on single images
+✅ Test 6 - Full evaluation run

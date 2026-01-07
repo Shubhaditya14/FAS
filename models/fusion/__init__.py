@@ -15,6 +15,7 @@ class FeatureFusion(nn.Module):
         hidden_dims: List[int] = [512, 256],
         num_classes: int = 2,
         fusion_type: str = "concat",
+        dropout: float = 0.5,
     ):
         """Initialize feature fusion module.
 
@@ -103,5 +104,4 @@ class AttentionFusion(nn.Module):
         return fused
 
 
-__all__ = ["FeatureFusion", "AttentionFusion"]
 __all__ = ['FeatureFusion', 'AttentionFusion']

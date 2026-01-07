@@ -1,12 +1,15 @@
-"""FeatherNet architecture for face anti-spoofing."""
+"""FeatherNet architecture for face anti-spoofing.
+
+This implementation matches the pretrained checkpoint structure exactly.
+"""
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 
-class ConvBlock(nn.Module):
-    """Basic convolution block with Conv + BN + PReLU."""
+class ConvBNPReLU(nn.Module):
+    """Convolution + BatchNorm + PReLU block."""
 
     def __init__(
         self, in_channels, out_channels, kernel_size=3, stride=1, padding=1, groups=1
@@ -28,200 +31,350 @@ class ConvBlock(nn.Module):
         return self.prelu(self.bn(self.conv(x)))
 
 
-class DepthwiseConv(nn.Module):
-    """Depthwise separable convolution."""
+class DepthwiseConvBN(nn.Module):
+    """Depthwise convolution + BatchNorm (no activation) - for conv_6_dw."""
 
-    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1):
+    def __init__(self, channels, kernel_size=3, stride=1, padding=0):
         super().__init__()
-        self.depthwise = nn.Conv2d(
-            in_channels,
-            in_channels,
+        self.conv = nn.Conv2d(
+            channels,
+            channels,
             kernel_size,
             stride,
             padding,
-            groups=in_channels,
+            groups=channels,
             bias=False,
         )
-        self.pointwise = nn.Conv2d(in_channels, out_channels, 1, 1, 0, bias=False)
-        self.bn_dw = nn.BatchNorm2d(in_channels)
-        self.bn_pw = nn.BatchNorm2d(out_channels)
-        self.prelu_dw = nn.PReLU(in_channels)
-        self.prelu_pw = nn.PReLU(out_channels)
+        self.bn = nn.BatchNorm2d(channels)
 
     def forward(self, x):
-        x = self.prelu_dw(self.bn_dw(self.depthwise(x)))
-        x = self.prelu_pw(self.bn_pw(self.pointwise(x)))
-        return x
+        return self.bn(self.conv(x))
+
+
+class ProjectConv(nn.Module):
+    """Project convolution with correct naming for checkpoint."""
+
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, 1, 1, 0, bias=False)
+        self.bn = nn.BatchNorm2d(out_channels)
+
+    def forward(self, x):
+        return self.bn(self.conv(x))
 
 
 class SEModule(nn.Module):
-    """Squeeze-and-Excitation module for channel attention."""
+    """SE module matching checkpoint naming: se_module.fc1, se_module.bn1, etc."""
 
-    def __init__(self, channels, reduction=16):
+    def __init__(self, channels, reduction=4):
         super().__init__()
-        self.fc1 = nn.Linear(channels, channels // reduction)
-        self.fc2 = nn.Linear(channels // reduction, channels)
+        reduced = channels // reduction
+        self.fc1 = nn.Conv2d(channels, reduced, 1, 1, 0, bias=False)
+        self.bn1 = nn.BatchNorm2d(reduced)
+        self.fc2 = nn.Conv2d(reduced, channels, 1, 1, 0, bias=False)
+        self.bn2 = nn.BatchNorm2d(channels)
 
     def forward(self, x):
-        b, c, _, _ = x.size()
-        # Squeeze: global average pooling
-        y = F.adaptive_avg_pool2d(x, 1).view(b, c)
-        # Excitation: FC -> ReLU -> FC -> Sigmoid
-        y = F.relu(self.fc1(y))
-        y = torch.sigmoid(self.fc2(y)).view(b, c, 1, 1)
-        # Scale
-        return x * y
+        se = F.adaptive_avg_pool2d(x, 1)
+        se = F.prelu(self.bn1(self.fc1(se)), torch.ones(1, device=se.device) * 0.25)
+        se = torch.sigmoid(self.bn2(self.fc2(se)))
+        return x * se
 
 
-class InvertedResidual(nn.Module):
-    """Inverted residual block (MobileNetV2-style bottleneck)."""
+class InvertedResidualBlock(nn.Module):
+    """Inverted residual block matching checkpoint structure.
 
-    def __init__(self, in_channels, out_channels, stride, expand_ratio, use_se=False):
+    Structure: conv (1x1 expand) -> conv_dw (3x3 depthwise) -> project (1x1 reduce)
+    Optional SE module after project.
+    """
+
+    def __init__(
+        self, in_channels, out_channels, expand_channels, stride=1, use_se=False
+    ):
         super().__init__()
-        self.stride = stride
         self.use_residual = stride == 1 and in_channels == out_channels
-        hidden_dim = int(in_channels * expand_ratio)
+        self.use_se = use_se
 
-        layers = []
-        # Expansion
-        if expand_ratio != 1:
-            layers.append(ConvBlock(in_channels, hidden_dim, kernel_size=1, padding=0))
+        # Expansion 1x1 conv
+        self.conv = ConvBNPReLU(in_channels, expand_channels, kernel_size=1, padding=0)
 
-        # Depthwise
-        layers.append(
-            ConvBlock(
-                hidden_dim,
-                hidden_dim,
-                kernel_size=3,
-                stride=stride,
-                padding=1,
-                groups=hidden_dim,
-            )
+        # Depthwise 3x3 conv
+        self.conv_dw = ConvBNPReLU(
+            expand_channels,
+            expand_channels,
+            kernel_size=3,
+            stride=stride,
+            padding=1,
+            groups=expand_channels,
         )
 
-        # SE module
+        # Projection 1x1 conv (no activation)
+        self.project = ProjectConv(expand_channels, out_channels)
+
+        # SE module with correct naming
         if use_se:
-            layers.append(SEModule(hidden_dim))
-
-        # Projection
-        layers.append(nn.Conv2d(hidden_dim, out_channels, 1, 1, 0, bias=False))
-        layers.append(nn.BatchNorm2d(out_channels))
-
-        self.conv = nn.Sequential(*layers)
+            self.se_module = SEModule(out_channels, reduction=4)
 
     def forward(self, x):
+        identity = x
+
+        out = self.conv(x)
+        out = self.conv_dw(out)
+        out = self.project(out)
+
+        if self.use_se:
+            out = self.se_module(out)
+
         if self.use_residual:
-            return x + self.conv(x)
-        else:
-            return self.conv(x)
+            out = out + identity
+
+        return out
+
+
+class TransitionBlock(nn.Module):
+    """Transition block between stages.
+
+    Structure: conv (1x1 expand) -> conv_dw (3x3 depthwise stride 2) -> project (1x1 reduce)
+    """
+
+    def __init__(self, in_channels, out_channels, expand_channels, stride=2):
+        super().__init__()
+        # Expansion 1x1 conv
+        self.conv = ConvBNPReLU(in_channels, expand_channels, kernel_size=1, padding=0)
+
+        # Depthwise 3x3 conv with stride
+        self.conv_dw = ConvBNPReLU(
+            expand_channels,
+            expand_channels,
+            kernel_size=3,
+            stride=stride,
+            padding=1,
+            groups=expand_channels,
+        )
+
+        # Projection 1x1 conv
+        self.project = ProjectConv(expand_channels, out_channels)
+
+    def forward(self, x):
+        out = self.conv(x)
+        out = self.conv_dw(out)
+        out = self.project(out)
+        return out
+
+
+class Stage(nn.Module):
+    """A stage containing multiple inverted residual blocks."""
+
+    def __init__(self, blocks):
+        super().__init__()
+        self.model = nn.ModuleList(blocks)
+
+    def forward(self, x):
+        for block in self.model:
+            x = block(x)
+        return x
 
 
 class FTGenerator(nn.Module):
-    """Feature Transform Generator network."""
+    """Feature Transform Generator - convolutional version matching checkpoint."""
 
-    def __init__(self, input_dim=512, hidden_dims=[512, 128, 512]):
+    def __init__(self):
         super().__init__()
-        layers = []
-        prev_dim = input_dim
-
-        for hidden_dim in hidden_dims:
-            layers.append(nn.Linear(prev_dim, hidden_dim))
-            layers.append(nn.BatchNorm1d(hidden_dim))
-            layers.append(nn.PReLU())
-            prev_dim = hidden_dim
-
-        self.generator = nn.Sequential(*layers)
+        # Conv layers: 128->128->64->1 (with BatchNorm, no explicit activation in checkpoint)
+        self.ft = nn.Sequential(
+            nn.Conv2d(128, 128, 3, 1, 1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, 64, 3, 1, 1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 1, 3, 1, 1),
+            nn.BatchNorm2d(1),
+        )
 
     def forward(self, x):
-        return self.generator(x)
+        return self.ft(x)
 
 
-class FeatherNetB(nn.Module):
-    """FeatherNet-B architecture for face anti-spoofing."""
+class FeatherNetBackbone(nn.Module):
+    """FeatherNet backbone matching the pretrained checkpoint exactly."""
 
-    def __init__(self, num_classes=2, input_size=128, embedding_dim=512):
+    def __init__(self, num_classes=2):
         super().__init__()
-        self.num_classes = num_classes
-        self.input_size = input_size
 
-        # Initial convolution
-        self.conv1 = ConvBlock(3, 32, kernel_size=3, stride=2, padding=1)
+        # Initial conv: 3 -> 32, stride 2
+        self.conv1 = ConvBNPReLU(3, 32, kernel_size=3, stride=2, padding=1)
 
-        # Inverted residual blocks
-        # Stage 1 (conv_23)
-        self.conv_23 = nn.Sequential(
-            InvertedResidual(32, 32, stride=1, expand_ratio=1, use_se=False),
-            InvertedResidual(32, 32, stride=2, expand_ratio=2, use_se=False),
+        # Depthwise conv: 32 -> 32
+        self.conv2_dw = ConvBNPReLU(
+            32, 32, kernel_size=3, stride=1, padding=1, groups=32
         )
 
-        # Stage 2 (conv_3)
-        self.conv_3 = nn.Sequential(
-            InvertedResidual(32, 48, stride=1, expand_ratio=2, use_se=False),
-            InvertedResidual(48, 48, stride=2, expand_ratio=2, use_se=False),
+        # Transition 2->3: 32 -> 64, stride 2
+        self.conv_23 = TransitionBlock(32, 64, expand_channels=103, stride=2)
+
+        # Stage 3: 4 blocks, last with SE (64 -> 64)
+        self.conv_3 = Stage(
+            [
+                InvertedResidualBlock(
+                    64, 64, expand_channels=13, stride=1, use_se=False
+                ),
+                InvertedResidualBlock(
+                    64, 64, expand_channels=13, stride=1, use_se=False
+                ),
+                InvertedResidualBlock(
+                    64, 64, expand_channels=13, stride=1, use_se=False
+                ),
+                InvertedResidualBlock(
+                    64, 64, expand_channels=13, stride=1, use_se=True
+                ),
+            ]
         )
 
-        # Stage 3 (conv_4)
-        self.conv_4 = nn.Sequential(
-            InvertedResidual(48, 96, stride=1, expand_ratio=2, use_se=True),
-            InvertedResidual(96, 96, stride=1, expand_ratio=2, use_se=True),
-            InvertedResidual(96, 96, stride=2, expand_ratio=2, use_se=True),
+        # Transition 3->4: 64 -> 128, stride 2
+        self.conv_34 = TransitionBlock(64, 128, expand_channels=231, stride=2)
+
+        # Stage 4: 6 blocks, last with SE (128 -> 128)
+        self.conv_4 = Stage(
+            [
+                InvertedResidualBlock(
+                    128, 128, expand_channels=231, stride=1, use_se=False
+                ),
+                InvertedResidualBlock(
+                    128, 128, expand_channels=52, stride=1, use_se=False
+                ),
+                InvertedResidualBlock(
+                    128, 128, expand_channels=26, stride=1, use_se=False
+                ),
+                InvertedResidualBlock(
+                    128, 128, expand_channels=77, stride=1, use_se=False
+                ),
+                InvertedResidualBlock(
+                    128, 128, expand_channels=26, stride=1, use_se=False
+                ),
+                InvertedResidualBlock(
+                    128, 128, expand_channels=26, stride=1, use_se=True
+                ),
+            ]
         )
 
-        # Stage 4 (conv_5)
-        self.conv_5 = nn.Sequential(
-            InvertedResidual(96, 128, stride=1, expand_ratio=2, use_se=True),
-            InvertedResidual(128, 128, stride=1, expand_ratio=2, use_se=True),
+        # Transition 4->5: 128 -> 128, stride 2
+        self.conv_45 = TransitionBlock(128, 128, expand_channels=308, stride=2)
+
+        # Stage 5: 2 blocks, last with SE (128 -> 128)
+        self.conv_5 = Stage(
+            [
+                InvertedResidualBlock(
+                    128, 128, expand_channels=26, stride=1, use_se=False
+                ),
+                InvertedResidualBlock(
+                    128, 128, expand_channels=26, stride=1, use_se=True
+                ),
+            ]
         )
 
-        # Final depthwise and pooling (conv_6_dw)
-        self.conv_6_dw = nn.Sequential(
-            ConvBlock(128, 512, kernel_size=1, padding=0), nn.AdaptiveAvgPool2d(1)
-        )
+        # Final layers
+        self.conv_6_sep = ConvBNPReLU(128, 512, kernel_size=1, padding=0)
+        # conv_6_dw has NO PReLU in checkpoint - just conv + bn
+        self.conv_6_dw = DepthwiseConvBN(512, kernel_size=8, stride=1, padding=0)
 
-        # Feature transform generator (optional)
-        self.ft_generator = FTGenerator(input_dim=512)
+        # Fully connected layers
+        self.linear = nn.Linear(512, 128, bias=False)
+        self.bn = nn.BatchNorm1d(128)
+        self.prob = nn.Linear(128, num_classes, bias=False)
 
-        # Classification head
-        self.embedding = nn.Sequential(
-            nn.Linear(512, embedding_dim), nn.BatchNorm1d(embedding_dim), nn.PReLU()
-        )
-
-        self.prob = nn.Linear(embedding_dim, 1)  # Binary classification
-
-    def forward(self, x, return_features=False):
-        """Forward pass.
-
-        Args:
-            x: Input tensor (B, 3, H, W)
-            return_features: If True, return features before classification
-
-        Returns:
-            Output tensor or (output, features) tuple
-        """
-        # Feature extraction
+    def forward(self, x):
         x = self.conv1(x)
+        x = self.conv2_dw(x)
         x = self.conv_23(x)
         x = self.conv_3(x)
+        x = self.conv_34(x)
         x = self.conv_4(x)
+        x = self.conv_45(x)
         x = self.conv_5(x)
+        x = self.conv_6_sep(x)
         x = self.conv_6_dw(x)
 
         # Flatten
         x = x.view(x.size(0), -1)
 
-        # Feature transform (optional)
-        ft_features = self.ft_generator(x)
+        # FC layers
+        x = self.linear(x)
+        x = self.bn(x)
+        x = self.prob(x)
 
-        # Embedding
-        features = self.embedding(ft_features)
+        return x
 
-        # Classification
-        output = self.prob(features)
-        output = torch.sigmoid(output)
 
-        if return_features:
-            return output, features
-        return output
+class FeatherNetB(nn.Module):
+    """FeatherNet-B for face anti-spoofing with pretrained weight loading."""
+
+    def __init__(self, num_classes=2, input_size=128):
+        super().__init__()
+        self.num_classes = num_classes
+        self.input_size = input_size
+
+        # Main model backbone
+        self.model = FeatherNetBackbone(num_classes=num_classes)
+
+        # FT Generator for auxiliary supervision (optional during inference)
+        self.FTGenerator = FTGenerator()
+
+    def forward(self, x, return_ft=False):
+        """Forward pass.
+
+        Args:
+            x: Input tensor (B, 3, H, W)
+            return_ft: If True, also return FT map
+
+        Returns:
+            If return_ft: (logits, ft_map)
+            Else: spoof probability (after sigmoid on spoof class)
+        """
+        # Get intermediate features for FT generator (before final pooling)
+        feat = self.model.conv1(x)
+        feat = self.model.conv2_dw(feat)
+        feat = self.model.conv_23(feat)
+        feat = self.model.conv_3(feat)
+        feat = self.model.conv_34(feat)
+        feat = self.model.conv_4(feat)
+        feat = self.model.conv_45(feat)
+        feat = self.model.conv_5(feat)
+
+        # FT generator operates on conv_5 output
+        if return_ft:
+            ft_map = self.FTGenerator(feat)
+
+        # Continue through final layers
+        x = self.model.conv_6_sep(feat)
+        x = self.model.conv_6_dw(x)
+        x = x.view(x.size(0), -1)
+        x = self.model.linear(x)
+        x = self.model.bn(x)
+        logits = self.model.prob(x)
+
+        if return_ft:
+            return logits, ft_map
+
+        # Return spoof probability using softmax over 2 classes
+        # logits: [class_0_logit, class_1_logit]
+        # class_0 = Spoof, class_1 = Real
+        probs = torch.softmax(logits, dim=1)
+        spoof_prob = probs[:, 0]  # Probability of class 0 (spoof)
+        return spoof_prob.unsqueeze(1)  # Return (B, 1) tensor
+
+    def predict(self, x):
+        """Get spoof probability for input.
+
+        Args:
+            x: Input tensor (B, 3, H, W)
+
+        Returns:
+            Spoof probability (B, 1)
+        """
+        self.eval()
+        with torch.no_grad():
+            return self.forward(x)
 
     def extract_features(self, x):
         """Extract feature embeddings.
@@ -230,10 +383,25 @@ class FeatherNetB(nn.Module):
             x: Input tensor (B, 3, H, W)
 
         Returns:
-            Feature embeddings (B, embedding_dim)
+            Feature embeddings (B, 128)
         """
-        _, features = self.forward(x, return_features=True)
-        return features
+        self.eval()
+        with torch.no_grad():
+            # Extract features through backbone
+            feat = self.model.conv1(x)
+            feat = self.model.conv2_dw(feat)
+            feat = self.model.conv_23(feat)
+            feat = self.model.conv_3(feat)
+            feat = self.model.conv_34(feat)
+            feat = self.model.conv_4(feat)
+            feat = self.model.conv_45(feat)
+            feat = self.model.conv_5(feat)
+            feat = self.model.conv_6_sep(feat)
+            feat = self.model.conv_6_dw(feat)
+            feat = feat.view(feat.size(0), -1)
+            feat = self.model.linear(feat)
+            feat = self.model.bn(feat)
+            return feat
 
     def load_pretrained(self, checkpoint_path, device="cpu"):
         """Load pretrained weights from checkpoint.
@@ -242,7 +410,9 @@ class FeatherNetB(nn.Module):
             checkpoint_path: Path to .pth file
             device: Device to load on
         """
-        checkpoint = torch.load(checkpoint_path, map_location=device)
+        checkpoint = torch.load(
+            checkpoint_path, map_location=device, weights_only=False
+        )
 
         # Handle different checkpoint formats
         if isinstance(checkpoint, dict):
@@ -255,15 +425,34 @@ class FeatherNetB(nn.Module):
         else:
             state_dict = checkpoint
 
-        # Remove 'module.' prefix from DataParallel
+        # Remove 'module.' prefix from DataParallel (only from START, preserve 'se_module')
         new_state_dict = {}
         for k, v in state_dict.items():
-            name = k.replace("module.", "") if k.startswith("module.") else k
+            # Use slicing to only remove prefix, not replace all occurrences
+            name = k[7:] if k.startswith("module.") else k
             new_state_dict[name] = v
 
         # Load weights
-        self.load_state_dict(new_state_dict, strict=False)
-        print(f"Loaded pretrained weights from {checkpoint_path}")
+        missing, unexpected = self.load_state_dict(new_state_dict, strict=False)
+
+        if len(missing) > 0:
+            print(f"Warning: {len(missing)} missing keys")
+            if len(missing) <= 10:
+                for key in missing:
+                    print(f"  - {key}")
+
+        if len(unexpected) > 0:
+            print(f"Warning: {len(unexpected)} unexpected keys")
+            if len(unexpected) <= 10:
+                for key in unexpected:
+                    print(f"  - {key}")
+
+        if len(missing) == 0 and len(unexpected) == 0:
+            print(f"Successfully loaded all weights from {checkpoint_path}")
+        else:
+            print(
+                f"Loaded pretrained weights from {checkpoint_path} (with some mismatches)"
+            )
 
 
 def create_feathernet(

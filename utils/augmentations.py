@@ -7,7 +7,7 @@ from albumentations.pytorch import ToTensorV2
 
 
 def get_train_transforms(
-    image_size: Tuple[int, int] = (224, 224),
+    image_size: Tuple[int, int] = (128, 128),
     mean: Tuple[float, float, float] = (0.485, 0.456, 0.406),
     std: Tuple[float, float, float] = (0.229, 0.224, 0.225),
     horizontal_flip: float = 0.5,
@@ -66,7 +66,7 @@ def get_train_transforms(
 
 
 def get_val_transforms(
-    image_size: Tuple[int, int] = (224, 224),
+    image_size: Tuple[int, int] = (128, 128),
     mean: Tuple[float, float, float] = (0.485, 0.456, 0.406),
     std: Tuple[float, float, float] = (0.229, 0.224, 0.225),
 ) -> A.Compose:
@@ -90,7 +90,7 @@ def get_val_transforms(
 
 
 def get_test_time_augmentation(
-    image_size: Tuple[int, int] = (224, 224),
+    image_size: Tuple[int, int] = (128, 128),
     mean: Tuple[float, float, float] = (0.485, 0.456, 0.406),
     std: Tuple[float, float, float] = (0.229, 0.224, 0.225),
     num_augmentations: int = 5,

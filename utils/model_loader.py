@@ -12,6 +12,7 @@ from utils.preprocessing import Preprocessor, create_preprocessor
 
 
 def load_pretrained_model(
+    model_path: str,
     model_type: str = "binary",
     device: str = "cpu",
     num_classes: int = 2,
@@ -27,9 +28,6 @@ def load_pretrained_model(
     Returns:
         Loaded model in eval mode
     """
-    # Create model
-    model = FeatherNetB(num_classes=num_classes)
-
     # Load checkpoint
     checkpoint = torch.load(model_path, map_location=device)
 
@@ -44,11 +42,30 @@ def load_pretrained_model(
     else:
         state_dict = checkpoint
 
-    # Remove 'module.' prefix from DataParallel
+    # Remove 'module.' prefix from DataParallel (only from START, preserve 'se_module')
     new_state_dict = {}
     for k, v in state_dict.items():
-        name = k.replace("module.", "") if k.startswith("module.") else k
+        # Use slicing to only remove prefix, not replace all occurrences
+        name = k[7:] if k.startswith("module.") else k
         new_state_dict[name] = v
+
+    # Auto-detect num_classes from checkpoint if not specified
+    detected_num_classes = num_classes
+    if num_classes == 2:  # Only auto-detect if using default
+        if "model.prob.weight" in new_state_dict:
+            detected_num_classes = new_state_dict["model.prob.weight"].shape[0]
+        elif "prob.weight" in new_state_dict:
+            detected_num_classes = new_state_dict["prob.weight"].shape[0]
+        elif "model.linear.weight" in new_state_dict:
+            # Fallback: check if this is a binary model (128 -> 2) or multiclass
+            detected_num_classes = 2  # Default for binary
+
+        if detected_num_classes != num_classes:
+            print(f"Auto-detected {detected_num_classes} classes from checkpoint")
+            num_classes = detected_num_classes
+
+    # Create model with correct num_classes
+    model = FeatherNetB(num_classes=num_classes)
 
     # Load weights (allow missing keys for flexibility)
     model.load_state_dict(new_state_dict, strict=False)
@@ -64,13 +81,25 @@ def load_pretrained_model(
 
 
 class FASPredictor:
-    """Face anti-spoofing predictor with easy interface."""
+    """Face anti-spoofing predictor with easy interface.
+
+    The model returns a 'spoof probability' - the probability that the image
+    is a spoof/attack. Higher values indicate more likely spoof.
+
+    Interpretation:
+        - spoof_prob < threshold → predicted as REAL (0)
+        - spoof_prob > threshold → predicted as SPOOF (1)
+
+    Note: The pretrained model was trained on CelebA-Spoof with a low threshold
+    (around 0.01-0.05) because it uses sigmoid on logits. For this model, a
+    threshold of 0.1-0.3 may work better than the default 0.5.
+    """
 
     def __init__(
         self,
         model_path: str,
         device: str = "cpu",
-        threshold: float = 0.5,
+        threshold: float = 0.1,
         image_size: int = 128,
     ):
         """Initialize FAS predictor.
@@ -78,7 +107,7 @@ class FASPredictor:
         Args:
             model_path: Path to model checkpoint
             device: Device to use
-            threshold: Classification threshold
+            threshold: Classification threshold (default 0.1, adjust as needed)
             image_size: Input image size
         """
         self.device = device
@@ -111,8 +140,11 @@ class FASPredictor:
             output = self.model(img_tensor)
 
         # Get prediction
+        # Model returns probability of being SPOOF (after sigmoid)
+        # output > threshold → predicted as SPOOF
+        # output < threshold → predicted as REAL
         confidence = output.item()
-        prediction = 1 if confidence > self.threshold else 0
+        prediction = 1 if confidence > self.threshold else 0  # 1=spoof, 0=real
 
         if return_confidence:
             return prediction, confidence
@@ -260,5 +292,4 @@ def create_predictor(
         device=device,
         threshold=threshold,
         image_size=config.get("image_size", 128),
-        image_size=config.get('image_size', 128)
     )

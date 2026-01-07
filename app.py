@@ -3,92 +3,58 @@
 import time
 from pathlib import Path
 
-import albumentations as A
-import cv2
-import numpy as np
 import streamlit as st
 import torch
 import torch.nn as nn
-import yaml
-from albumentations.pytorch import ToTensorV2
+import torchvision.transforms as T
 from PIL import Image
 
-from models.backbones import get_backbone
+from models.feathernet import create_feathernet
 
 
 @st.cache_resource
-def load_config(config_path: str) -> dict:
-    with open(config_path, "r") as f:
-        return yaml.safe_load(f)
-
-
-@st.cache_resource
-def load_model(model_config_path: str, checkpoint_path: str, device_type: str = "cpu"):
-    """Load model from checkpoint."""
-    model_config = load_config(model_config_path)
-
-    # Setup device
-    if device_type == "mps" and torch.backends.mps.is_available():
-        device = torch.device("mps")
-    elif device_type == "cuda" and torch.cuda.is_available():
-        device = torch.device("cuda")
-    else:
-        device = torch.device("cpu")
-
-    # Create model
-    model = get_backbone(
-        name=model_config["backbone"]["name"],
-        pretrained=False,
-        num_classes=model_config["classifier"]["num_classes"],
-    )
-
-    # Load checkpoint
-    if Path(checkpoint_path).exists():
-        checkpoint = torch.load(checkpoint_path, map_location=device)
-        model.load_state_dict(checkpoint["model_state_dict"])
-
-    model = model.to(device)
+def load_model(checkpoint_path: str, device: torch.device):
+    """Load FeatherNet model from checkpoint."""
+    model = create_feathernet(num_classes=2, pretrained_path=checkpoint_path, device=str(device))
     model.eval()
+    return model
 
-    return model, device
 
-
-def get_transform(image_size=(224, 224)) -> A.Compose:
+def get_transform(image_size: tuple = (128, 128)) -> T.Compose:
     """Get image transform pipeline."""
-    return A.Compose(
-        [
-            A.Resize(height=image_size[0], width=image_size[1]),
-            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-            ToTensorV2(),
-        ]
-    )
+    return T.Compose([
+        T.Resize(image_size),
+        T.ToTensor(),
+        T.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+    ])
 
 
 def predict(
-    image: np.ndarray, model: nn.Module, transform: A.Compose, device: torch.device
+    image: Image.Image,
+    model: nn.Module,
+    transform: T.Compose,
+    device: torch.device
 ) -> dict:
     """Make prediction on image."""
     # Apply transforms
-    transformed = transform(image=image)
-    image_tensor = transformed["image"].unsqueeze(0).to(device)
+    image_tensor = transform(image)
+    image_tensor = image_tensor.unsqueeze(0).to(device)
 
     # Predict
     start_time = time.time()
     with torch.no_grad():
-        outputs = model(image_tensor)
-        probs = torch.softmax(outputs, dim=1)
-        pred_class = torch.argmax(probs, dim=1).item()
-        confidence = probs[0, pred_class].item()
+        spoof_prob = model(image_tensor)
+        confidence = spoof_prob.item()
+        is_real = confidence < 0.5
+        label = "Real" if is_real else "Spoof"
+        real_prob = 1.0 - confidence
     inference_time = time.time() - start_time
-
-    is_real = pred_class == 0
-    label = "Real" if is_real else "Spoof"
 
     return {
         "label": label,
-        "confidence": confidence,
+        "confidence": confidence if not is_real else real_prob,
         "is_real": is_real,
-        "probabilities": {"real": probs[0, 0].item(), "spoof": probs[0, 1].item()},
+        "probabilities": {"real": real_prob, "spoof": confidence},
         "inference_time": inference_time,
     }
 
@@ -109,17 +75,23 @@ def main():
     # Sidebar configuration
     st.sidebar.header("⚙️ Configuration")
 
-    model_config_path = st.sidebar.text_input(
-        "Model Config Path", value="configs/model_config.yaml"
-    )
+    checkpoint_dir = Path("pth")
+    if checkpoint_dir.exists():
+        available_models = list(checkpoint_dir.glob("*.pth")) + list(checkpoint_dir.glob("*.pth.tar"))
+    else:
+        available_models = []
 
-    checkpoint_path = st.sidebar.text_input(
-        "Checkpoint Path", value="checkpoints/best_model.pth"
-    )
+    if not available_models:
+        st.sidebar.error("❌ No checkpoint files found in pth/ directory")
+        st.stop()
+
+    model_names = [str(p) for p in available_models]
+    checkpoint_path = st.sidebar.selectbox("Select Model", model_names)
 
     device_type = st.sidebar.selectbox(
-        "Device", options=["cpu", "mps", "cuda"], index=0
+        "Device", options=["cpu", "mps", "cuda"], index=1 if torch.backends.mps.is_available() else 0
     )
+    device = torch.device(device_type)
 
     confidence_threshold = st.sidebar.slider(
         "Confidence Threshold", min_value=0.0, max_value=1.0, value=0.5, step=0.05
@@ -128,9 +100,11 @@ def main():
     # Load model
     try:
         with st.spinner("Loading model..."):
-            model, device = load_model(model_config_path, checkpoint_path, device_type)
+            model = load_model(checkpoint_path, device)
             transform = get_transform()
+            num_params = sum(p.numel() for p in model.parameters())
         st.sidebar.success(f"✅ Model loaded on {device}")
+        st.sidebar.info(f"📊 Parameters: {num_params:,}")
     except Exception as e:
         st.sidebar.error(f"❌ Error loading model: {e}")
         st.stop()
@@ -140,7 +114,7 @@ def main():
 
     input_method = st.radio(
         "Select input method:",
-        options=["Upload Image", "Use Webcam", "Sample Images"],
+        options=["Upload Image", "Use Webcam"],
         horizontal=True,
     )
 
@@ -153,31 +127,12 @@ def main():
 
         if uploaded_file is not None:
             image = Image.open(uploaded_file).convert("RGB")
-            image = np.array(image)
 
     elif input_method == "Use Webcam":
         camera_image = st.camera_input("Take a picture")
 
         if camera_image is not None:
             image = Image.open(camera_image).convert("RGB")
-            image = np.array(image)
-
-    elif input_method == "Sample Images":
-        st.info(
-            "Sample images feature - add your sample images to 'data/samples/' directory"
-        )
-        sample_dir = Path("data/samples")
-        if sample_dir.exists():
-            sample_files = list(sample_dir.glob("*.jpg")) + list(
-                sample_dir.glob("*.png")
-            )
-            if sample_files:
-                selected_sample = st.selectbox(
-                    "Choose a sample:", options=[f.name for f in sample_files]
-                )
-                if selected_sample:
-                    image = Image.open(sample_dir / selected_sample).convert("RGB")
-                    image = np.array(image)
 
     # Prediction
     if image is not None:
@@ -251,7 +206,7 @@ def main():
         This Face Anti-Spoofing (FAS) system uses deep learning to detect presentation attacks:
 
         1. **Input Processing**: The image is preprocessed and normalized
-        2. **Feature Extraction**: A deep neural network extracts facial features
+        2. **Feature Extraction**: FeatherNet extracts facial features
         3. **Classification**: The model classifies the face as Real or Spoof
         4. **Confidence Score**: Provides probability estimates for both classes
 
@@ -283,5 +238,4 @@ def main():
 
 
 if __name__ == "__main__":
-if __name__ == '__main__':
     main()

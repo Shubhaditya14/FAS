@@ -49,21 +49,28 @@ class Preprocessor:
         Returns:
             Preprocessed tensor (C, H, W)
         """
+        # Track if we loaded from path (and need BGR->RGB conversion)
+        loaded_from_path = False
+
         # Load image if path
         if isinstance(image, str):
             image = cv2.imread(image)
             if image is None:
                 raise ValueError(f"Could not load image from {image}")
+            loaded_from_path = True
 
-        # Convert PIL to numpy
+        # Convert PIL to numpy (PIL is RGB format)
         if isinstance(image, Image.Image):
             image = np.array(image)
 
-        # Convert BGR to RGB if needed
-        if self.to_rgb and len(image.shape) == 3 and image.shape[2] == 3:
-            # Assume OpenCV BGR format
-            if isinstance(image, np.ndarray):
-                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        # Convert BGR to RGB only if loaded from cv2.imread (which uses BGR)
+        if (
+            loaded_from_path
+            and self.to_rgb
+            and len(image.shape) == 3
+            and image.shape[2] == 3
+        ):
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
         # Apply transforms
         transformed = self.transform(image=image)
