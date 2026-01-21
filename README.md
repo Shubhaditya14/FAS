@@ -12,3 +12,4 @@ This repository hosts a FastAPI-based face anti-spoofing service with optional O
 - MongoDB should be reachable at `mongodb://localhost:27017` by default; configure via `.env` if needed.
 - OTP email delivery uses SMTP settings from `.env`; in dev mode it logs OTPs to the console.
 - Model checkpoints and datasets are not in version control—place them under `pth/` or `checkpoints/` locally.
+# Facial-Auth
