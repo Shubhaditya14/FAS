@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Secure Login</title>
+  <link rel="stylesheet" href="/ui/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Secure access</p>
+        <h1>Face-locked Sign In</h1>
+        <p class="lede">Choose login or signup, capture a photo, and we’ll do a quick face match before granting access.</p>
+      </div>
+    </header>
+
+    <section class="panel" id="flow-landing" style="margin-top:16px;">
+      <h2>How do you want to proceed?</h2>
+      <p class="hint" style="margin-top:4px;">Pick an action to continue with a quick photo capture.</p>
+      <div class="btn-row" style="margin-top:12px;">
+        <button class="btn primary" id="go-login">Log in</button>
+        <button class="btn ghost" id="go-signup">Sign up</button>
+      </div>
+    </section>
+
+    <section class="panel hidden" id="flow-workspace" style="margin-top:16px;">
+      <div class="flow-header">
+        <div class="btn-row">
+          <button class="btn ghost" id="back-home">← Back</button>
+          <button class="btn ghost" id="switch-login">Login</button>
+          <button class="btn ghost" id="switch-signup">Signup</button>
+        </div>
+        <p class="hint" id="flow-hint">Capture a photo, then submit.</p>
+      </div>
+
+      <div class="video-stack">
+        <div class="video-shell">
+          <video id="auth-video" autoplay muted playsinline></video>
+          <canvas id="auth-canvas" class="hidden"></canvas>
+          <div class="status-chip" data-auth-status>Camera idle</div>
+          <img id="capture-preview" class="capture-preview hidden" alt="Captured frame preview">
+        </div>
+
+        <div class="controls">
+          <div id="login-form">
+            <div class="field"><span>Username</span><input type="text" id="login-username" placeholder="you@example.com"></div>
+            <div class="field"><span>Password</span><input type="password" id="login-password" placeholder="••••••••"></div>
+            <div class="field"><span>OTP code</span><input type="text" id="login-otp" placeholder="6-digit code"></div>
+            <div class="btn-row" style="margin-bottom:8px;">
+              <button class="btn ghost" id="request-login-otp">Request OTP</button>
+              <button class="btn ghost" id="verify-login-otp">Verify OTP</button>
+            </div>
+            <button class="btn ghost" id="capture-login">Capture photo</button>
+            <button class="btn primary" id="login">Analyze & log in</button>
+            <div class="hint" id="login-message">Capture a photo, then log in.</div>
+          </div>
+
+          <div id="signup-form" class="hidden">
+            <div class="field"><span>Username</span><input type="text" id="signup-username" placeholder="you@example.com"></div>
+            <div class="field"><span>Email</span><input type="email" id="signup-email" placeholder="you@example.com"></div>
+            <div class="field"><span>Phone</span><input type="tel" id="signup-phone" placeholder="+1 555 123 4567"></div>
+            <div class="field"><span>Aadhaar ID</span><input type="text" id="signup-aadhaar" placeholder="16-digit Aadhaar"></div>
+            <div class="field"><span>Password</span><input type="password" id="signup-password" placeholder="Min 8 chars"></div>
+            <div class="field"><span>Confirm</span><input type="password" id="signup-confirm" placeholder="Repeat password"></div>
+            <div class="field"><span>OTP code</span><input type="text" id="signup-otp" placeholder="6-digit code"></div>
+            <div class="btn-row" style="margin-bottom:8px;">
+              <button class="btn ghost" id="request-signup-otp">Request OTP</button>
+              <button class="btn ghost" id="verify-signup-otp">Verify OTP</button>
+            </div>
+            <button class="btn ghost" id="capture-signup">Capture photo</button>
+            <button class="btn primary" id="signup">Sign up</button>
+            <div class="hint" id="signup-message">Fill details, capture a photo, then sign up.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="readout">
+        <div class="stat">
+          <p class="label">Session</p>
+          <p class="verdict" id="session-status">No token</p>
+          <p class="sub" id="session-user">-</p>
+        </div>
+        <div class="stat">
+          <p class="label">Last face check</p>
+          <p class="verdict" id="face-match">Pending</p>
+          <p class="sub" id="face-distance">--</p>
+          <p class="sub" id="spoof-info">Spoof: --</p>
+          <p class="sub" id="deepfake-info">Deepfake: --</p>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="/ui/auth.js"></script>
+</body>
+</html>

@@ -18,6 +18,14 @@ NC='\033[0m' # No Color
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_DIR"
 
+# Load .env if present (for OTP/behavior flags, SMTP, etc.)
+if [ -f ".env" ]; then
+  set -o allexport
+  # shellcheck disable=SC1091
+  source .env
+  set +o allexport
+fi
+
 # Banner
 echo -e "${CYAN}"
 echo "╔═══════════════════════════════════════════════════════════╗"

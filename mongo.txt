@@ -1,0 +1,22 @@
+MongoDB setup (additional collections/indexes)
+Database: fas_auth (default from MONGO_DB env)
+
+1) otp_sessions collection
+   - Purpose: store OTP session tokens and hashes for Aadhaar/email verification.
+   - Indexes:
+       db.otp_sessions.createIndex({ session_token: 1 }, { unique: true })
+       db.otp_sessions.createIndex({ expires_at: 1 }, { expireAfterSeconds: 0 })
+
+2) behavior_samples collection
+   - Purpose: store recent behavior scores for mouse/keystroke monitoring.
+   - Indexes:
+       db.behavior_samples.createIndex({ session_id: 1 })
+       db.behavior_samples.createIndex({ expires_at: 1 }, { expireAfterSeconds: 0 })
+
+3) users collection (already present, ensure these)
+   - db.users.createIndex({ username: 1 }, { unique: true })
+   - db.users.createIndex({ email: 1 }, { unique: true })
+
+How to apply (mongo shell):
+   use fas_auth
+   // run the createIndex commands above

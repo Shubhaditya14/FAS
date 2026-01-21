@@ -20,6 +20,7 @@ class MultiModelPredictor:
         device: str = "cpu",
         fusion_type: str = "average",
         weights: Optional[List[float]] = None,
+        probability_mode: str = "spoof",
     ):
         """Initialize multi-model predictor.
 
@@ -28,10 +29,14 @@ class MultiModelPredictor:
             device: Device to run inference on
             fusion_type: Type of fusion ('average', 'weighted', 'max', 'voting')
             weights: Optional weights for weighted fusion (must sum to 1.0)
+            probability_mode: What the raw model output represents ('spoof' or 'real')
         """
         self.device = torch.device(device)
         self.fusion_type = fusion_type
         self.weights = weights
+        if probability_mode not in {"spoof", "real"}:
+            raise ValueError("probability_mode must be 'spoof' or 'real'")
+        self.probability_mode = probability_mode
 
         if fusion_type == "weighted" and weights is None:
             raise ValueError("Weights must be provided for weighted fusion")
@@ -78,8 +83,10 @@ class MultiModelPredictor:
     ) -> float:
         """Get single model prediction (spoof probability)."""
         with torch.no_grad():
-            spoof_prob = model(image_tensor)
-            return spoof_prob.item()
+            prob = model(image_tensor).item()
+            if self.probability_mode == "spoof":
+                return prob
+            return 1.0 - prob
 
     def predict(
         self,
@@ -130,7 +137,7 @@ class MultiModelPredictor:
 
         # Determine final classification
         is_real = ensemble_prob < 0.5
-        label = "Real" if is_real else "Spoof"
+        label = "Real" if is_real else "Fake"
         confidence = ensemble_prob if not is_real else (1.0 - ensemble_prob)
 
         result = {

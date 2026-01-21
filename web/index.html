@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Face Anti-Spoofing</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Familjen+Grotesk:wght@500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="atmosphere"></div>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Realtime liveness</p>
+        <h1>Live Face Anti-Spoofing</h1>
+        <p class="lede">
+          Stream from your webcam and get immediate spoof vs. real feedback as frames arrive.
+        </p>
+      </div>
+      <div class="actions">
+        <button id="start" class="btn primary">Start scanning</button>
+        <button id="stop" class="btn ghost" disabled>Stop</button>
+      </div>
+    </header>
+
+    <section class="panel">
+      <div class="video-stack">
+        <div class="video-shell">
+          <video id="video" autoplay muted playsinline></video>
+          <canvas id="frame-canvas" class="hidden"></canvas>
+          <div class="status-chip" data-status>Waiting for camera</div>
+          <div class="overlay" id="blink-overlay">
+            <div class="overlay-card">
+              <p class="overlay-title">Calibration</p>
+              <p class="overlay-text" id="blink-text">Blink 3 times to calibrate</p>
+            </div>
+          </div>
+        </div>
+        <div class="controls">
+          <label class="field">
+            <span>Threshold</span>
+            <input type="range" id="threshold" min="0" max="1" step="0.01" value="0.5">
+            <div class="value" id="threshold-value">0.50</div>
+          </label>
+          <div class="hint">Adjust how strict the spoof detector is.</div>
+          <div class="hint">Uses session-based smoothing to steady predictions.</div>
+        </div>
+      </div>
+
+      <div class="readout">
+        <div class="stat">
+          <p class="label">Current verdict</p>
+          <p class="verdict" id="verdict">Idle</p>
+          <p class="sub" id="device">Device: -</p>
+        </div>
+        <div class="stat">
+          <p class="label">Spoof probability</p>
+          <div class="bar">
+            <div class="fill" id="probability-bar"></div>
+          </div>
+          <p class="sub" id="probability-text">--%</p>
+        </div>
+        <div class="stat">
+          <p class="label">Deepfake check</p>
+          <p class="verdict" id="deepfake-label">Not checked</p>
+          <p class="sub" id="deepfake-prob">--</p>
+          <p class="sub" id="deepfake-age">Last: --</p>
+        </div>
+        <div class="stat">
+          <p class="label">Behavior monitor</p>
+          <p class="verdict" id="behavior-score">--</p>
+          <p class="sub" id="behavior-risk">Risk: --</p>
+          <p class="sub" id="behavior-updated">Last: --</p>
+        </div>
+        <div class="stat">
+          <p class="label">Latency</p>
+          <p class="metric" id="latency">-- ms</p>
+          <p class="sub" id="last-update">Waiting for frame</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="behavior-panel">
+      <div class="panel-header">
+        <h3>Behavior dashboard</h3>
+        <p class="hint">Mouse and typing patterns sampled every few seconds.</p>
+      </div>
+      <div class="behavior-grid">
+        <div class="stat">
+          <p class="label">Recent scores</p>
+          <p class="metric" id="behavior-history">--</p>
+        </div>
+        <div class="stat">
+          <p class="label">Flags</p>
+          <p class="sub" id="behavior-flags">--</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="note">
+      <p>Open a single tab to avoid camera conflicts. The page uses <code>/api/predict</code> on the backend to score each frame. Behavior module posts to <code>/api/behavior/score</code> in the background.</p>
+    </section>
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+</html>

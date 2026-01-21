@@ -74,6 +74,7 @@ class FASInference:
         weights: Optional[List[float]] = None,
         temporal_smoothing: bool = True,
         smoothing_window: int = 5,
+        probability_mode: str = "spoof",
     ):
         """Initialize FAS inference.
 
@@ -84,10 +85,14 @@ class FASInference:
             weights: Optional weights for weighted fusion
             temporal_smoothing: Whether to use temporal smoothing for video
             smoothing_window: Frames to smooth over
+            probability_mode: What the model output represents ('spoof' or 'real')
         """
         self.device = torch.device(device)
         self.temporal_smoothing = temporal_smoothing
         self.smoother = TemporalSmoothing(window_size=smoothing_window) if temporal_smoothing else None
+        if probability_mode not in {"spoof", "real"}:
+            raise ValueError("probability_mode must be 'spoof' or 'real'")
+        self.probability_mode = probability_mode
 
         # Setup transform
         self.transform = T.Compose([
@@ -113,6 +118,7 @@ class FASInference:
                 device=str(self.device),
                 fusion_type=fusion_type,
                 weights=weights,
+                probability_mode=probability_mode,
             )
             self.is_ensemble = True
 
@@ -120,6 +126,7 @@ class FASInference:
         if self.is_ensemble:
             print(f"  Ensemble with {len(checkpoint_paths)} models ({fusion_type} fusion)")
         print(f"  Temporal smoothing: {'enabled' if temporal_smoothing else 'disabled'}")
+        print(f"  Probability mode: {probability_mode}")
 
     def predict_image(
         self,
@@ -149,26 +156,52 @@ class FASInference:
             result = self.model.predict(image, return_individual=False)
             inference_time = time.time() - start_time
             result["inference_time"] = inference_time
+            spoof_prob = result["probabilities"]["spoof"]
+            real_prob = result["probabilities"]["real"]
+            if self.probability_mode == "spoof":
+                is_real = spoof_prob < threshold
+            else:
+                is_real = real_prob >= threshold
+            result["is_real"] = is_real
+            result["label"] = "Real" if is_real else "Fake"
+            result["confidence"] = real_prob if is_real else spoof_prob
         else:
             # Single model inference
             img_tensor = self.transform(image).unsqueeze(0).to(self.device)
 
             with torch.no_grad():
-                spoof_prob = self.model(img_tensor).item()
+                raw_prob = self.model(img_tensor).item()
+
+            if self.probability_mode == "spoof":
+                spoof_prob = raw_prob
+                real_prob = 1.0 - raw_prob
+            else:
+                real_prob = raw_prob
+                spoof_prob = 1.0 - raw_prob
 
             inference_time = time.time() - start_time
 
-            is_real = spoof_prob < threshold
-            label = "Real" if is_real else "Spoof"
+            if self.probability_mode == "spoof":
+                is_real = spoof_prob < threshold
+            else:
+                is_real = real_prob >= threshold
+
+            label = "Real" if is_real else "Fake"
+
+            confidence = real_prob if is_real else spoof_prob
+            probabilities = {
+                "real": real_prob,
+                "spoof": spoof_prob,
+            }
+
+            # Normalize any potential drift outside [0,1]
+            probabilities = {k: max(0.0, min(1.0, v)) for k, v in probabilities.items()}
 
             result = {
                 "label": label,
-                "confidence": spoof_prob if not is_real else (1.0 - spoof_prob),
+                "confidence": confidence,
                 "is_real": is_real,
-                "probabilities": {
-                    "real": 1.0 - spoof_prob,
-                    "spoof": spoof_prob,
-                },
+                "probabilities": probabilities,
                 "inference_time": inference_time,
             }
 

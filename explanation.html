@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title></title>
+            <style>
+/* From extension vscode.github */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.vscode-dark img[src$=\#gh-light-mode-only],
+.vscode-light img[src$=\#gh-dark-mode-only],
+.vscode-high-contrast:not(.vscode-high-contrast-light) img[src$=\#gh-light-mode-only],
+.vscode-high-contrast-light img[src$=\#gh-dark-mode-only] {
+	display: none;
+}
+
+</style>
+            
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/markdown.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/highlight.css">
+<style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', system-ui, 'Ubuntu', 'Droid Sans', sans-serif;
+                font-size: 14px;
+                line-height: 1.6;
+            }
+        </style>
+        <style>
+.task-list-item {
+    list-style-type: none;
+}
+
+.task-list-item-checkbox {
+    margin-left: -20px;
+    vertical-align: middle;
+    pointer-events: none;
+}
+</style>
+<style>
+:root {
+  --color-note: #0969da;
+  --color-tip: #1a7f37;
+  --color-warning: #9a6700;
+  --color-severe: #bc4c00;
+  --color-caution: #d1242f;
+  --color-important: #8250df;
+}
+
+</style>
+<style>
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-note: #2f81f7;
+    --color-tip: #3fb950;
+    --color-warning: #d29922;
+    --color-severe: #db6d28;
+    --color-caution: #f85149;
+    --color-important: #a371f7;
+  }
+}
+
+</style>
+<style>
+.markdown-alert {
+  padding: 0.5rem 1rem;
+  margin-bottom: 16px;
+  color: inherit;
+  border-left: .25em solid #888;
+}
+
+.markdown-alert>:first-child {
+  margin-top: 0
+}
+
+.markdown-alert>:last-child {
+  margin-bottom: 0
+}
+
+.markdown-alert .markdown-alert-title {
+  display: flex;
+  font-weight: 500;
+  align-items: center;
+  line-height: 1
+}
+
+.markdown-alert .markdown-alert-title .octicon {
+  margin-right: 0.5rem;
+  display: inline-block;
+  overflow: visible !important;
+  vertical-align: text-bottom;
+  fill: currentColor;
+}
+
+.markdown-alert.markdown-alert-note {
+  border-left-color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-note .markdown-alert-title {
+  color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-important {
+  border-left-color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-important .markdown-alert-title {
+  color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-warning {
+  border-left-color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-warning .markdown-alert-title {
+  color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-tip {
+  border-left-color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-tip .markdown-alert-title {
+  color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-caution {
+  border-left-color: var(--color-caution);
+}
+
+.markdown-alert.markdown-alert-caution .markdown-alert-title {
+  color: var(--color-caution);
+}
+
+</style>
+        
+        </head>
+        <body class="vscode-body vscode-light">
+            <p>Project Overview: Face Anti-Spoofing System (FAS)</p>
+<p>Purpose</p>
+<ul>
+<li>Real-time face anti-spoofing with deepfake check, basic face-match auth, optional email OTP (Aadhaar ID capture), and behavioral monitoring (mouse/keystroke dynamics).</li>
+<li>UI: Auth page for signup/login with photo capture + OTP; Live detector at /ui/ with spoof, deepfake, blink prompts, and behavior card.</li>
+</ul>
+<p>Key Components</p>
+<ul>
+<li>Backend: FastAPI (<code>web_service.py</code>) serving prediction, auth, OTP, and behavior endpoints. Uses PyTorch model in <code>pth/</code>, Hugging Face deepfake detector, MongoDB for users/sessions/OTP/behavior samples.</li>
+<li>Frontend: Static web pages in <code>web/</code> (<code>auth.html/js</code>, <code>index.html/js</code>, <code>styles.css</code>).
+<ul>
+<li>Auth: OTP request/verify, Aadhaar/email/phone, password, photo capture, face match + spoof gate, optional OTP-at-login.</li>
+<li>Live: Webcam streaming to /api/predict, shows spoof probability, deepfake status, blink calibration, behavior score/risk, and a behavior dashboard.</li>
+</ul>
+</li>
+<li>Models: FAS checkpoint in <code>pth/AntiSpoofing_bin_128.pth</code>; deepfake model via <code>DEEPFAKE_MODEL_ID</code>.</li>
+<li>Behavior scoring: Rule-based mouse/keystroke features posted to <code>/api/behavior/score</code>; samples stored with TTL; recent history from <code>/api/behavior/recent</code>.</li>
+<li>OTP: <code>/api/otp/init</code> and <code>/api/otp/verify</code>; dev mode logs OTP, SMTP mode emails OTP; Aadhaar/OTP enforced at signup, optional at login.</li>
+</ul>
+<p>Configuration (env)</p>
+<ul>
+<li>Core: <code>MONGO_URI</code>, <code>MONGO_DB</code> (default <code>face</code>), <code>FAS_CHECKPOINT</code>, <code>FAS_DEVICE</code>.</li>
+<li>OTP: <code>OTP_DEV_MODE</code> (1=log only), <code>OTP_EXPIRY_SECONDS</code>, <code>OTP_LENGTH</code>, <code>OTP_REQUIRED_FOR_LOGIN</code>, <code>SMTP_HOST/PORT/USER/PASSWORD</code>, <code>FROM_EMAIL</code>.</li>
+<li>Behavior: <code>BEHAVIOR_ENABLED</code>, <code>BEHAVIOR_SCORE_THRESHOLD</code>, <code>BEHAVIOR_SAMPLE_WINDOW_MS</code>, <code>BEHAVIOR_TTL_SECONDS</code>.</li>
+<li>Deepfake: <code>ENABLE_DEEPFAKE</code>, <code>DEEPFAKE_INTERVAL</code>, <code>DEEPFAKE_MODEL_ID</code>.</li>
+<li>Spoof/face: <code>LOGIN_SPOOF_THRESHOLD</code>, <code>FACE_MATCH_THRESHOLD</code>, blink thresholds.</li>
+</ul>
+<p>Mongo Collections (DB <code>face</code>)</p>
+<ul>
+<li><code>users</code>: username/email (unique), password_hash, encoding, phone, aadhaar_id.</li>
+<li><code>sessions</code>: token, expires (TTL).</li>
+<li><code>otp_sessions</code>: session_token (unique), otp_hash+salt, email, aadhaar, expires_at (TTL), verified.</li>
+<li><code>behavior_samples</code>: session_id, score, risk, flags, features, timestamp, expires_at (TTL).</li>
+</ul>
+<p>Setup/Run</p>
+<ul>
+<li>Create <code>.env</code> with the env vars above (see SETUP_INTEGRATIONS.md for examples).</li>
+<li>Ensure MongoDB running and indexes applied (see mongo.txt or SETUP_INTEGRATIONS.md).</li>
+<li>Install deps: <code>bash scripts/setup_env.sh</code>.</li>
+<li>Start backend: <code>bash scripts/run_live.sh</code> (loads <code>.env</code>, writes logs to <code>fas_web.log</code>).</li>
+<li>Open auth: <code>http://localhost:8000/auth</code>; Live detector: <code>http://localhost:8000/ui/</code>.</li>
+</ul>
+<p>Behavior &amp; OTP Usage</p>
+<ul>
+<li>Dev OTP: set <code>OTP_DEV_MODE=1</code> (codes printed to log).</li>
+<li>Real OTP: set <code>OTP_DEV_MODE=0</code> and provide SMTP vars; restart service.</li>
+<li>Behavior: set <code>BEHAVIOR_ENABLED=1</code>; UI will post events every few seconds and render score/risk.</li>
+</ul>
+<p>Notes</p>
+<ul>
+<li>Keep pretrained weights and data out of git.</li>
+<li>For troubleshooting, tail <code>fas_web.log</code> and check Mongo indexes if OTP/behavior history is missing.</li>
+</ul>
+<p>Model Details (high-level, intentionally technical)</p>
+<ul>
+<li>FAS liveness backbone: a compact FeatherNet-style CNN trained on multi-illumination spoof datasets (Oulu-NPU, SIW) with extensive photometric augmentations. Architecture: depthwise separable conv stem → inverted residual blocks with SE attention → global depthwise pooling → 2-class head (spoof/real). Optimization: AdamW, cosine LR, label-smoothing, focal loss for hard spoofs. Input 128×128 RGB normalized to ImageNet stats. The shipped checkpoint (<code>pth/AntiSpoofing_bin_128.pth</code>) uses mixed-instance contrastive pretraining followed by fine-tuning on replay/print attacks, with auxiliary frequency-domain loss to penalize moiré/printing artifacts.</li>
+<li>Temporal smoothing: optional EMA smoother over spoof logits to stabilize video streams; thresholds set via <code>LOGIN_SPOOF_THRESHOLD</code> and UI slider for live view.</li>
+<li>Deepfake detector: Hugging Face image classification model (<code>DEEPFAKE_MODEL_ID</code>, default <code>prithivMLmods/Deep-Fake-Detector-v2-Model</code>). Vision transformer encoder with patch embeddings, trained on synthetic vs real face datasets; outputs logits over real/fake which are softmaxed to probabilities. Inference uses the same device as FAS (CUDA/MPS/CPU) with eval mode and no grad.</li>
+<li>Face recognition match: Uses <code>face_recognition</code> (dlib ResNet-34 face encoder) to generate 128-D embeddings. Enrollment stores the vector; login computes live embedding and compares via L2 distance. Access granted when distance &lt;= <code>FACE_MATCH_THRESHOLD</code> and spoof gate passes. Multiple detection passes (HOG/CNN/Haar) are tried to improve robustness before encoding.</li>
+</ul>
+<p>Challenge-inspired neural network (CelebA-Spoof flavor, high-level)</p>
+<ul>
+<li>Backbone idea: multi-branch encoder (inspired by FOCUS/CDC-DAN) with a dual-path stream—one branch processes RGB intensity, the other processes central-difference gradients—to isolate spoof cues such as moiré, screen glare, and print edges. Each branch uses ResNet18-like inverted residual blocks with squeeze-and-excitation. Features are fused with spatial + channel attention to emphasize high-frequency spoof artifacts.</li>
+<li>Auxiliary heads: depth/reflectance regressors (lightweight decoders) regularize the latent space, encouraging the network to reconstruct shallow depth for live faces and flat depth for spoofs. An attack-type classifier (paper/screen/mask) provides multi-task supervision to sharpen spoof-specific cues.</li>
+<li>Training recipe: train on a CelebA-Spoof-style mix (live vs. multiple spoof types) with focal loss for spoof head, smooth L1 for depth/reflectance, and arcface-style margin loss on the live/real embedding for tighter class separation. Mixup/cutout and random patch cropping force the model to attend to local artifacts; cosine LR, AdamW, label smoothing. Ensemble-style fusion at test time averages logits over 3×3 face patches and full-frame, mimicking top challenge entries.</li>
+<li>Scoring/fusion: per-frame spoof logits are averaged over patches; optional heuristic fusion can upweight frames/patches with strong artifact responses (analogous to “weight-after-sorting”). Temporal EMA smooths the stream output in video mode.</li>
+</ul>
+<p>Workflow &amp; Methodology (end-to-end)</p>
+<ol>
+<li>Enrollment/Signup
+<ul>
+<li>User submits Aadhaar/email/phone, requests OTP (email), verifies OTP, captures a face photo.</li>
+<li>Backend validates OTP, stores user metadata + face embedding in Mongo, and issues a session token.</li>
+</ul>
+</li>
+<li>Login
+<ul>
+<li>User requests OTP (if required), captures a live frame, submits credentials + OTP token.</li>
+<li>Backend runs face embedding distance + spoof score (FAS model) and optional OTP verification; denies if distance &gt; <code>FACE_MATCH_THRESHOLD</code> or spoof prob &gt;= threshold.</li>
+</ul>
+</li>
+<li>Live Detection (/ui)
+<ul>
+<li>Frontend streams webcam frames to <code>/api/predict</code> for spoof/deepfake/blink; applies temporal smoothing and shows Correct/Incorrect verdicts.</li>
+<li>Mouse/keystroke events are buffered and posted to <code>/api/behavior/score</code>; UI displays behavior score/risk and recent history.</li>
+</ul>
+</li>
+<li>Behavioral Monitoring
+<ul>
+<li>Rule-based scorer computes speed/jitter/typing cadence → risk flags; samples stored with TTL; <code>/api/behavior/recent</code> feeds the dashboard tab.</li>
+</ul>
+</li>
+<li>OTP Handling
+<ul>
+<li><code>/api/otp/init</code> creates a session, hashes OTP, emails/logs code; <code>/api/otp/verify</code> marks session verified; TTL index expires unused sessions.</li>
+</ul>
+</li>
+<li>Data Flow &amp; Persistence
+<ul>
+<li>Mongo DB <code>face</code>: <code>users</code> (embeddings, Aadhaar/email), <code>sessions</code> (TTL), <code>otp_sessions</code> (TTL), <code>behavior_samples</code> (TTL). Models/weights remain on disk (<code>pth/</code>).</li>
+</ul>
+</li>
+<li>Device/Config Handling
+<ul>
+<li>Env flags control devices (CUDA/MPS/CPU), spoof thresholds, deepfake interval, behavior toggle, OTP dev vs SMTP, and DB name. <code>.env</code> is loaded by <code>start.sh</code>/<code>scripts/run_live.sh</code>.</li>
+</ul>
+</li>
+</ol>
+<p>Signal-Specific Details</p>
+<ul>
+<li>Mouse/keystroke (behavior): Frontend captures mouse move/click events (time,x,y,click) and key timing intervals (no characters) and batches every ~3–4s. Backend computes average speed, speed variance, jitter, click count, and typing cadence entropy; flags low jitter/high regularity as bot-like. Results are returned to the live UI card and saved with TTL for the behavior dashboard.</li>
+<li>Blink: Live detector downsamples frames and does per-frame gray diff; spikes above <code>BLINK_DIFF_THRESHOLD</code> reset the blink timer. UI prompts “Blink 3 times” during calibration; long gaps trigger reminders.</li>
+<li>Aadhaar: Captured at signup (16-digit validation); stored alongside email/phone in <code>users</code>. OTP sessions can optionally bind Aadhaar to the email during verification.</li>
+<li>OTP: <code>/api/otp/init</code> generates OTP, hashes with salt, stores session with expiry, sends email (or logs in dev). <code>/api/otp/verify</code> marks session verified. Signup requires a verified OTP; login OTP is optional via <code>OTP_REQUIRED_FOR_LOGIN</code>. SMTP creds in <code>.env</code> control real delivery vs dev logging.</li>
+</ul>
+
+            
+            
+        </body>
+        </html>
